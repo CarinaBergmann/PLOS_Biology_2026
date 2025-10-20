@@ -1,0 +1,823 @@
+---
+title: "PLOS_BERGMANN_et_al"
+author: "C.Bergmann"
+date: "2025-09-05"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+Content: This R Markdown document includes the majority of 'Age-related increase in neurofilament light in blood among mammalian species' analyses - German Center for Neurodegenerative Diseases (DZNE) e.V. Tübingen & Hertie Institute for Clinical Brain Research - Department of Cellular Neuroscience - AG Jucker
+
+
+# **Installing & loading libraries**
+## Installing libraries
+```{r, message = FALSE}
+# List of packages
+packages <- c(
+  "readxl", "dplyr", "writexl", "ggplot2", "openxlsx", "data.table",
+  "vroom", "readr", "tidyr", "survival", "survminer", "finalfit",
+  "lme4", "corrplot", "lmerTest", "psych", "mnormt", "DescTools",
+  "patchwork", "tidyverse", "scales", "ggthemes", "ggcorrplot",
+  "OlinkAnalyze", "cowplot", "ggpubr", "tibble", "purrr", "pheatmap",
+  "optimx", "bestNormalize", "car", "MASS", "nortest", "broom", "dunn.test",
+  "mgcv", "ggbreak", "ggtext")
+
+for (pkg in packages) {
+  if (!require(pkg, character.only = TRUE)) {
+    message(paste0("📦 ", pkg, " is installed…"))
+    install.packages(pkg, dependencies = TRUE)
+  }
+  message(paste0("✅ ", pkg, "is loaded"))
+  library(pkg, character.only = TRUE)
+}
+
+message("All packages are ready!")
+
+```
+
+# **FIGURE 1**
+```{r}
+##### LOAD, MERGE, PREPARE DATA #####
+# Upload Excel file
+NfL_Species <- read_excel("/Users/carinabergmann_1/Documents/01-Carina_PhD/28-NfL-Species-Paper/19-DATA/00-Bergmann_et_al.xlsx")
+  
+NfL_Species$Lower_age_limit <- 0.05*NfL_Species$`Mean life expectancy`
+NfL_Species$Upper_age_limit <- 0.5*NfL_Species$`Mean life expectancy`
+
+NfL_Species$Fig_1_included <- ifelse(
+  # --> No Age information known --> Fig_1_included = 2
+  is.na(NfL_Species$Age_years), 2,
+  # --> If age is above lower age limit --> Fig_1_included = 1, otherwise NA 
+  ifelse(NfL_Species$Age_years >= NfL_Species$Lower_age_limit, 1, NA)) 
+
+NfL_Species %>%
+  filter(Figures %in% c(1, NA)) %>%   # if sample shown in figures -> 1 if not -> NA
+  count(Figures, Fig_1_included)
+
+
+# Figures = 1 & Fig_1_included = 1 --> in figures & age above 0.05%
+# Figures = 1 & Fig_1_included = 2 --> in Figure 4 (no age known)
+# Figures = 1 & Fig_1_included = NA --> in Figure 4 (very young)
+# Figures = NA & Fig_1_included = 1 --> NOT in figures although age above 0.05%
+# Figures = NA & Fig_1_included = 2 --> NOT in figures & no age known
+# Figures = NA & Fig_1_included = NA --> NOT in figures, too young
+
+
+NfL_Species$Sup_2_included <- ifelse(NfL_Species$Age_years >= NfL_Species$Lower_age_limit & NfL_Species$Age_years <= NfL_Species$Upper_age_limit, 1, NA)
+NfL_Species$Version <- as.factor(NfL_Species$Version)
+
+# Filter data for species - Figure 1
+NfL_Species_Figure1 <- NfL_Species %>%
+  filter(
+    Species %in% c("Mouse", "Cat", "Dog", "Human", "Horse"),
+    Fig_1_included == 1)
+
+# FILTER SPECIES 
+NfL_mouse <- NfL_Species_Figure1 %>%
+  filter(Species == "Mouse")
+NfL_cat <- NfL_Species_Figure1 %>%
+  filter(Species == "Cat" & Age_years > 1)  
+NfL_dog <- NfL_Species_Figure1 %>%
+  filter(Species == "Dog" & Age_years > 1) 
+NfL_human <- NfL_Species_Figure1 %>%
+  filter(Species == "Human")
+NfL_horse <- NfL_Species_Figure1 %>%
+  filter(Species == "Horse")
+
+###### 1A ######
+mouse_Group_1 <- NfL_mouse %>%
+  filter(Age_years <= 1)
+mouse_Group_2 <- NfL_mouse %>%
+  filter(Age_years > 1 & Age_years <= 2)
+mouse_Group_3 <- NfL_mouse %>%
+  filter(Age_years > 2)
+
+cat_Group_1 <- NfL_cat %>%
+  filter(Age_years <= 7 & Age_years > 1)
+cat_Group_2 <- NfL_cat %>%
+  filter(Age_years > 7 & Age_years <= 14)
+cat_Group_3 <- NfL_cat %>%
+    filter(Age_years > 14)
+
+dog_Group_1 <- NfL_dog %>%
+  filter(Age_years <= 6 & Age_years > 1)
+dog_Group_2 <- NfL_dog %>%
+  filter(Age_years > 6 & Age_years <= 12)
+dog_Group_3 <- NfL_dog %>%
+  filter(Age_years > 12)
+
+human_Group_1 <- NfL_human %>%
+  filter(Age_years <= 40)
+human_Group_2 <- NfL_human %>%
+  filter(Age_years > 40 & Age_years <= 80)
+human_Group_3 <- NfL_human %>%
+  filter(Age_years > 80)
+
+horse_Group_1 <- NfL_horse %>%
+  filter(Age_years <= 12.5)
+horse_Group_2 <- NfL_horse %>%
+  filter(Age_years > 12.5 & Age_years <= 25)
+horse_Group_3 <- NfL_horse %>%
+  filter(Age_years > 25)
+
+# Bind rows and name groups
+Figure_1_A <- bind_rows(
+  mouse_Group_1 %>% mutate (Group = "Mouse <= 1 year", Set = "Set1"),
+  mouse_Group_2 %>% mutate (Group = "Mouse > 1 - 2 years", Set = "Set1"),
+  mouse_Group_3 %>% mutate (Group = "Mouse > 2 years", Set = "Set1"),
+  cat_Group_1 %>% mutate (Group = "Cat <= 7 years", Set = "Set2"),
+  cat_Group_2 %>% mutate (Group = "Cat > 7 - 14 years", Set = "Set2"),
+  cat_Group_3 %>% mutate (Group = "Cat > 14 years", Set = "Set2"),
+  dog_Group_1 %>% mutate (Group = "Dog <= 6 years", Set = "Set3"),
+  dog_Group_2 %>% mutate (Group = "Dog > 6 - 12 years", Set = "Set3"),
+  dog_Group_3 %>% mutate (Group = "Dog > 12 years", Set = "Set3"),
+  human_Group_1 %>% mutate (Group = "Human 20 - 40 years", Set = "Set4"),
+  human_Group_2 %>% mutate (Group = "Human > 40 - 80 years", Set = "Set4"),
+  human_Group_3 %>% mutate (Group = "Human > 80 years", Set = "Set4"),
+  horse_Group_1 %>% mutate (Group = "Horse <= 12.5 years", Set = "Set5"),
+  horse_Group_2 %>% mutate (Group = "Horse > 12.5 - 25 years", Set = "Set5"),
+  horse_Group_3 %>% mutate (Group = "Horse > 25 years", Set = "Set5"))
+
+
+```
+
+
+### *Figure 1 A* 
+```{r}
+###### FINAL PLOT CREATED WITH GRAPHPAD PRISM ######
+
+# Median and 95%CI
+summary_Figure_1_A <- Figure_1_A %>%
+  group_by(Group) %>%
+  summarise(
+    median = median(NfL),
+    sd = sd(NfL),
+    n = n(),
+    se = sd/sqrt(n),
+    ci = qt(0.975, df = n-1) * se,
+    .groups = "drop")
+# Order
+Figure_1_A$Group <- factor(Figure_1_A$Group, levels = unique(Figure_1_A$Group))
+# Plot
+ggplot(Figure_1_A, aes(x = Group, y = NfL)) +
+  geom_point(size = 1, color = "black", alpha = 0.6, 
+           position = position_jitter(width = 0.1), inherit.aes = FALSE,
+           aes(x = Group, y = NfL)) +
+  stat_summary(fun.data = mean_ci, geom = "errorbar", width = 0.02, color = "darkred") +
+  stat_summary(fun = median, geom = "point", 
+             shape = 95, size = 6, color = "red") + 
+  geom_hline(yintercept = 0.696, linetype = "dashed", color = "darkblue") +
+  geom_hline(yintercept = 1.38, linetype = "dashed", color = "lightblue") +  
+  labs(y = "NfL [pg/ml]", x = "") +
+  scale_y_log10(
+    limits = c(0.01, 10000),
+    breaks = c(0.01, 0.1, 1, 10, 100, 1000, 10000),
+    labels = scales::comma) +
+  geom_vline(xintercept = c(3.5, 6.5, 9.5, 12.5), linetype = "dashed") +
+  theme_classic2 (base_size = 14) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#######
+
+
+
+# 3WAY ANOVA including sex
+ANOVA_1A <- Figure_1_A %>%
+  filter (Gender %in% c("m","f"))
+Table_1A <- ANOVA_1A %>%
+  group_by (Species, Group) %>%
+  summarise (
+    Number = n(),
+    Females = sum(Gender == "f", na.rm = TRUE),
+    Males = sum(Gender == "m", na.rm = TRUE),
+    Unknown_sex = sum (Gender == "u", na.rm = TRUE))
+   
+# Table_1A
+
+ANOVA_1A <- ANOVA_1A %>%
+  mutate (
+    Age_group = case_when(
+      Group %in% c("Mouse <= 1 year", "Cat <= 7 years", "Dog <= 6 years", "Human 20 - 40 years","Horse <= 12.5 years")  ~ "Young",
+      Group %in% c("Mouse > 1 - 2 years", "Cat > 7 - 14 years", "Dog > 6 - 12 years", "Human > 40 - 80 years","Horse > 12.5 - 25 years")  ~ "Adult",
+      Group %in% c("Mouse > 2 years", "Cat > 14 years", "Dog > 12 years", "Human > 80 years", "Horse > 25 years") ~ "Aged",
+      TRUE                           ~ NA_character_))
+
+options(contrasts = c("contr.sum", "contr.poly"))  # wichtig für Type III
+fit <- lm(NfL_log ~ Species * Age_group * Gender, data = ANOVA_1A)
+# Type III
+Anova(fit, type = 3)
+
+```
+
+### *Figure 1 B* 
+```{r}
+Figure_1B <- subset(NfL_Species_Figure1, !(Species %in% c("Cat", "Dog") & Age_years <= 1))
+
+
+Figure_1B_plot <- ggplot(Figure_1B, aes(x = Age_years, y = NfL, color = Species)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(aes(group = Species), method = "gam", formula = y ~ s(x, bs = "cs", k = 5), se = FALSE) +
+  scale_x_log10(
+    limits = c(0.1, 110),
+    breaks = c(0.1, 1, 10, 100),
+    labels = c(0.1, 1, 10, 100)) +
+  scale_y_log10(
+    limits = c(0.1, 10000),
+    breaks = c(0.1, 1, 10, 100, 1000, 10000),
+    labels = c(0.1, 1, 10, 100, 1000, 10000)) +
+  labs(
+    x = "Age [years]",
+    y = expression(bold("NfL [pg " * ml^-1 * "]"))) +
+  theme_classic2() +
+  theme(
+  text = element_text(family = "Arial"),
+    axis.line = element_line (linewidth = 1),
+    axis.ticks = element_line (linewidth = 1),
+    axis.text.x = element_text (size = 16, colour = "black"),
+    axis.text.y = element_text (size = 16, colour = "black"),
+    axis.title.x = element_text (size = 18, face = "bold"),
+    axis.title.y = element_text (size = 18))
+
+print(Figure_1B_plot)
+
+### Test for significance ### ONLY IF REQUESTED
+#gam_model_mouse <- gam(NfL ~ s(Age_years, bs = "cs", k = 5), 
+#                 data = Figure_1B[Figure_1B$Species == "Mouse", ])
+#gam_model_cat <- gam(NfL ~ s(Age_years, bs = "cs", k = 5), 
+#                 data = Figure_1B[Figure_1B$Species == "Cat", ])
+#gam_model_dog <- gam(NfL ~ s(Age_years, bs = "cs", k = 5), 
+#                 data = Figure_1B[Figure_1B$Species == "Dog", ])
+#gam_model_horse <- gam(NfL ~ s(Age_years, bs = "cs", k = 5), 
+#                 data = Figure_1B[Figure_1B$Species == "Horse", ])
+#gam_model_human <- gam(NfL ~ s(Age_years, bs = "cs", k = 5), 
+#                 data = Figure_1B[Figure_1B$Species == "Human", ])
+
+#summary(gam_model_mouse)
+#summary(gam_model_cat)
+#summary(gam_model_dog)
+#summary(gam_model_horse)
+#summary(gam_model_human)
+
+```
+
+### *Figure 1 C* 
+```{r}
+# LOG PLOTS 
+Linear_mouse <- lm(NfL_log ~ Age_years, data = NfL_mouse)
+Linear_cat <- lm(NfL_log ~ Age_years, data = NfL_cat)
+Linear_dog <- lm(NfL_log ~ Age_years, data = NfL_dog)
+Linear_horse <- lm(NfL_log ~ Age_years, data = NfL_horse)
+Linear_human <- lm(NfL_log ~ Age_years, data = NfL_human)
+
+##### MOUSE #####
+mouse_log <- ggplot(NfL_mouse, aes(x = Age_years, y = NfL_log)) +
+  geom_point(color = "black",alpha = 0.5, position = position_jitter(width = 0.1, height = 0)) +
+  geom_smooth(method = "lm", color = "blue", fill = "lightblue", alpha = 0.4) +  # Smooth curves
+   xlim(0, 3) + ylim(0, 4) +
+  labs(title = "", #log (NfL) as a function of age - Mouse
+       x = "Age [years]",
+    y = expression(bold("NfL [pg " * ml^-1 * "]"))) +
+  theme_classic2() +
+  theme(
+  text = element_text(family = "Arial"),
+    axis.line = element_line (linewidth = 1),
+    axis.ticks = element_line (linewidth = 1),
+    axis.text.x = element_text (size = 16, colour = "black"),
+    axis.text.y = element_text (size = 16, colour = "black"),
+    axis.title.x = element_text (size = 18, face = "bold"),
+    axis.title.y = element_text (size = 18))
+# Equation and R^2
+summary_mouse <- summary(Linear_mouse)
+coeff_mouse <- summary_mouse$coefficients
+intercept_mouse <- round(coeff_mouse[1, 1], 3)
+slope_mouse <- round(coeff_mouse[2, 1], 3)
+r_squared_mouse <- round(summary_mouse$r.squared, 3)
+eq_mouse <- paste0("y = ", slope_mouse, "x + ", intercept_mouse, 
+                  "      \nR² = ", r_squared_mouse)
+
+##### CAT ######
+cat_log <- ggplot(NfL_cat, aes(x = Age_years, y = NfL_log)) +
+  geom_point(color = "black",alpha = 0.5, position = position_jitter(width = 0.1, height = 0)) +
+  geom_smooth(method = "lm", color = "blue", fill = "lightblue", alpha = 0.4) +  # Smooth curves
+   xlim(0, 26) + ylim(-2, 4) + 
+  labs(title = "", #log (NfL) as a function of age - Cat
+        x = "Age [years]",
+    y = expression(bold("NfL [pg " * ml^-1 * "]"))) + 
+  theme_classic2() +
+  theme(
+  text = element_text(family = "Arial"),
+    axis.line = element_line (linewidth = 1),
+    axis.ticks = element_line (linewidth = 1),
+    axis.text.x = element_text (size = 16, colour = "black"),
+    axis.text.y = element_text (size = 16, colour = "black"),
+    axis.title.x = element_text (size = 18, face = "bold"),
+    axis.title.y = element_text (size = 18))
+# Equation and R^2
+summary_cat <- summary(Linear_cat)
+coeff_cat <- summary_cat$coefficients
+intercept_cat <- round(coeff_cat[1, 1], 3)
+slope_cat <- round(coeff_cat[2, 1], 3)
+r_squared_cat <- round(summary_cat$r.squared, 3)
+eq_cat <- paste0("y = ", slope_cat, "x + ", intercept_cat, 
+                  "      \nR² = ", r_squared_cat)
+
+##### DOG #####
+dog_log <- ggplot(NfL_dog, aes(x = Age_years, y = NfL_log)) +
+  geom_point(color = "black",alpha = 0.5, position = position_jitter(width = 0.1, height = 0)) +
+  geom_smooth(method = "lm", color = "blue", fill = "lightblue", alpha = 0.4) +  # Smooth curves
+   xlim(0, 20) + ylim(-1, 4) + 
+  labs(title = "", # log (NfL) as a function of age - Dog
+        x = "Age [years]",
+    y = expression(bold("NfL [pg " * ml^-1 * "]"))) +
+  theme_classic2() +
+  theme(
+  text = element_text(family = "Arial"),
+    axis.line = element_line (linewidth = 1),
+    axis.ticks = element_line (linewidth = 1),
+    axis.text.x = element_text (size = 16, colour = "black"),
+    axis.text.y = element_text (size = 16, colour = "black"),
+    axis.title.x = element_text (size = 18, face = "bold"),
+    axis.title.y = element_text (size = 18))
+# Equation and R^2
+summary_dog <- summary(Linear_dog)
+coeff_dog <- summary_dog$coefficients
+intercept_dog <- round(coeff_dog[1, 1], 3)
+slope_dog <- round(coeff_dog[2, 1], 3)
+r_squared_dog <- round(summary_dog$r.squared, 3)
+eq_dog <- paste0("y = ", slope_dog, "x + ", intercept_dog, 
+                  "      \nR² = ", r_squared_dog)
+
+##### HORSE #####
+horse_log <- ggplot(NfL_horse, aes(x = Age_years, y = NfL_log)) +
+  geom_point(color = "black",alpha = 0.5, position = position_jitter(width = 0.1, height = 0)) +
+  geom_smooth(method = "lm", color = "blue", fill = "lightblue", alpha = 0.4) +  # Smooth curves
+   xlim(0, 37) + ylim(0, 2) + 
+  labs(title = "", #log (NfL) as a function of age - Horse
+        x = "Age [years]",
+    y = expression(bold("NfL [pg " * ml^-1 * "]"))) +
+  theme_classic2() + 
+  theme(
+  text = element_text(family = "Arial"),
+    axis.line = element_line (linewidth = 1),
+    axis.ticks = element_line (linewidth = 1),
+    axis.text.x = element_text (size = 16, colour = "black"),
+    axis.text.y = element_text (size = 16, colour = "black"),
+    axis.title.x = element_text (size = 18, face = "bold"),
+    axis.title.y = element_text (size = 18)) 
+# Equation and R^2
+summary_horse <- summary(Linear_horse)
+coeff_horse <- summary_horse$coefficients
+intercept_horse <- round(coeff_horse[1, 1], 3)
+slope_horse <- round(coeff_horse[2, 1], 3)
+r_squared_horse <- round(summary_horse$r.squared, 3)
+eq_horse <- paste0("y = ", slope_horse, "x + ", intercept_horse, 
+                  "      \nR² = ", r_squared_horse)
+
+##### HUMAN #####
+human_log <- ggplot(NfL_human, aes(x = Age_years, y = NfL_log)) +
+  geom_point(color = "black",alpha = 0.5, position = position_jitter(width = 0.1, height = 0)) +
+  geom_smooth(method = "lm", color = "blue", fill = "lightblue", alpha = 0.4) +  # Smooth curves
+   xlim(20, 110) + ylim(0, 3) + 
+  labs(title = "", #log (NfL) as a function of age - Human
+        x = "Age [years]",
+    y = expression(bold("NfL [pg " * ml^-1 * "]"))) +
+  theme_classic2() +
+  theme(
+  text = element_text(family = "Arial"),
+    axis.line = element_line (linewidth = 1),
+    axis.ticks = element_line (linewidth = 1),
+    axis.text.x = element_text (size = 16, colour = "black"),
+    axis.text.y = element_text (size = 16, colour = "black"),
+    axis.title.x = element_text (size = 18, face = "bold"),
+    axis.title.y = element_text (size = 18))
+# Equation and R^2
+summary_human <- summary(Linear_human)
+coeff_human <- summary_human$coefficients
+intercept_human <- round(coeff_human[1, 1], 3)
+slope_human <- round(coeff_human[2, 1], 3)
+r_squared_human <- round(summary_human$r.squared, 3)
+eq_human <- paste0("y = ", slope_human, "x + ", intercept_human, 
+                  "      \nR² = ", r_squared_human)
+
+
+print (mouse_log)
+eq_mouse
+print (cat_log)
+eq_cat
+print (dog_log)
+eq_dog
+print (horse_log)
+eq_horse
+print (human_log)
+eq_human
+
+
+```
+
+# **FIGURE 2**
+```{r}
+##### LOAD, MERGE AND PREPARE DATA #####
+#Upload Excel file
+Aging_study_summary_data <- read_excel("/Users/carinabergmann_1/Documents/01-Carina_PhD/28-NfL-Species-Paper/19-DATA/01_Bergmann_et_al_Figure2.xlsx")
+
+#Calculate lifespan(days) 
+Aging_study_summary_data$lifespan_days <- Aging_study_summary_data$Date_of_prep - Aging_study_summary_data$Date_of_birth
+
+#Calculate the time to death from the time of blood collection 
+Aging_study_summary_data$T1_ime_to_event <- Aging_study_summary_data$Age_at_death - Aging_study_summary_data$Age_BC1
+Aging_study_summary_data$T2_ime_to_event <- Aging_study_summary_data$Age_at_death  - Aging_study_summary_data$Age_BC2
+Aging_study_summary_data$T3_ime_to_event <- Aging_study_summary_data$Age_at_death  - Aging_study_summary_data$Age_BC3
+Aging_study_summary_data$T4_ime_to_event <- Aging_study_summary_data$Age_at_death  - Aging_study_summary_data$Age_BC4
+#Set animal status to 1 = dead
+Aging_study_summary_data$status_os = 1
+
+# Calculate random slope NfL
+#Create one data file with all static factors
+Aging_study_summary_data_static <- Aging_study_summary_data %>% 
+  dplyr::select("Strain", "Animal_number","Batch", "Gender", "Earmark", "Date_dob" ="Date_of_birth","lifespan_days", "lifespan_months" = "Age_at_death", "T1_ime_to_event", "T2_ime_to_event", "T3_ime_to_event", "T4_ime_to_event","status_os")
+#Create one long data file with all date data
+Aging_study_summary_data_date_long <- Aging_study_summary_data %>%
+  dplyr::select("Animal_number", "Date_1" = "Date_BC1","Date_2" =  "Date_BC2","Date_3" = "Date_BC3","Date_4" = "Date_BC4", "Date_dop" = "Date_of_prep") %>%
+  pivot_longer(cols = starts_with("Date"), names_to = "Timepoint", values_to = "Date") %>%
+  mutate(Timepoint = gsub("Date_", "", Timepoint))
+#Create one long data file with all age data
+Aging_study_summary_data_Age_long <- Aging_study_summary_data %>%
+  dplyr::select("Animal_number", "Age_1" = "Age_BC1","Age_2" =  "Age_BC2","Age_3" = "Age_BC3","Age_4" = "Age_BC4", "Age_dop" = "Age_at_death") %>%
+  pivot_longer(cols = starts_with("Age"), names_to = "Timepoint", values_to = "Age") %>%
+  mutate(Timepoint = gsub("Age_", "", Timepoint))
+#Create one long data file with all weight data
+Aging_study_summary_data_Weight_long <- Aging_study_summary_data %>%
+  dplyr::select("Animal_number", "Weight_1" = "Weight_BC1","Weight_2" =  "Weight_BC2","Weight_3" = "Weight_BC3","Weight_4" = "Weight_BC4", "Weight_dop" = "Weight_at_death") %>%
+  pivot_longer(cols = starts_with("Weight"), names_to = "Timepoint", values_to = "Weight") %>%
+  mutate(Timepoint = gsub("Weight_", "", Timepoint))
+#Create one long data file with all NfL data
+Aging_study_summary_data_NfL_long <- Aging_study_summary_data %>%
+  dplyr:: select("Animal_number", "NfL_1" = "NfL_BC1","NfL_2" =  "NfL_BC2","NfL_3" = "NfL_BC3","NfL_4" = "NfL_BC4") %>%
+  pivot_longer(cols = starts_with("NfL"), names_to = "Timepoint", values_to = "NfL") %>%
+  mutate(Timepoint = gsub("NfL_", "", Timepoint))
+
+#Put all long data files together in a new summary_long data file
+Aging_study_summary_data_date_long <- full_join(Aging_study_summary_data_static, Aging_study_summary_data_date_long, by= "Animal_number")
+Aging_study_summary_long <- full_join(Aging_study_summary_data_date_long, Aging_study_summary_data_Age_long,  by =c( "Animal_number", "Timepoint"))
+Aging_study_summary_long <- full_join(Aging_study_summary_long, Aging_study_summary_data_Weight_long,  by =c( "Animal_number", "Timepoint"))
+Aging_study_summary_long <- full_join(Aging_study_summary_long, Aging_study_summary_data_NfL_long,  by =c( "Animal_number", "Timepoint"))
+
+Aging_study_summary_long <- Aging_study_summary_long %>%
+  group_by(Animal_number) %>%
+  mutate(lifespan_months = last(Age)) #creating a new variable
+
+# CALCULATING RANDOM SLOPE
+Aging_study_summary_long_nfl <- Aging_study_summary_long %>%
+  drop_na(NfL) %>%
+  group_by(Animal_number)
+
+LMM_time_nfl_all <-(lmer(NfL  ~ Age + (1+Age|Animal_number), Aging_study_summary_long_nfl))
+beta <- coef(LMM_time_nfl_all)$Animal_number
+extracted1 <- tibble::rownames_to_column(beta, "Animal_number") %>% dplyr::select(-"(Intercept)") 
+colnames(extracted1) <- c("Animal_number", "Random_slope_nfl")
+Aging_study_summary_long <- merge(Aging_study_summary_long, extracted1, by = "Animal_number", all.y = TRUE)
+## add optimizer so you don't get convergence error, " control = lmerControl(optimizer ="Nelder_Mead")"
+LMM_time_nfl_all <-(lmer(NfL  ~ Age + (1+Age|Animal_number), data=Aging_study_summary_long_nfl, REML = TRUE, control = lmerControl(optimizer ="Nelder_Mead")))
+summary(LMM_time_nfl_all) # gives back the results of LMM, with loaded lmerTest package it includes p-value
+# takes first random_slope_nfl value per animal_number
+#add random slope values to the Aging_study_summary_data 
+Aging_study_summary_long_agg1 <- Aging_study_summary_long %>%
+  group_by(Animal_number) %>%
+  summarize(Random_slope_nfl = first(Random_slope_nfl))  
+
+Aging_study_summary_data <- merge(Aging_study_summary_data, Aging_study_summary_long_agg1, by = "Animal_number")
+
+# Calculate the last time point per animal_number --> Time_to_event
+Aging_study_last_timepoint <- Aging_study_summary_long_nfl %>%
+  group_by(Animal_number) %>%
+  summarize(last_age = max(Age))   
+
+Aging_study_summary_data <- merge(Aging_study_summary_data, Aging_study_last_timepoint, by = "Animal_number")
+
+# Calculate Time to event for random slope 
+Aging_study_summary_data$Time_to_event <- Aging_study_summary_data$Age_at_death - Aging_study_summary_data$last_age
+
+```
+
+### *Figure 2 A * 
+```{r}
+# CREATED WITH AFFINITY DESIGNER - WORKFLOW
+```
+
+### *Figure 2 B* 
+```{r}
+RS_beta <- coef(LMM_time_nfl_all)$Animal_number %>%
+  tibble::rownames_to_column("Animal_number")
+
+Aging_study_summary_long$Animal_number <- as.factor (Aging_study_summary_long$Animal_number)
+
+# Plot
+random_slope_plot <- ggplot(Aging_study_summary_long, aes(x = Age, y = NfL, color = Animal_number)) +
+  geom_point(size = 2, alpha = 1, shape = 19, position = position_jitter(width = 0, height = 0), show.legend = FALSE) +
+  geom_abline(
+    data = RS_beta,
+    aes(intercept = `(Intercept)`, slope = Age, color = Animal_number),
+    show.legend = FALSE, alpha = 0.4) + 
+  #scale_color_brewer(palette = "Set3") +
+   xlim(18.9, 25) + ylim(0, 1500) +
+  theme_classic2() +
+  labs(title = "", # NfL vs. Age with individual random slopes
+        x = "Age [months]",
+    y = expression(bold("Plasma NfL [pg " * ml^-1 * "]"))) +
+  theme_classic2() +
+  theme(
+  text = element_text(family = "Arial"),
+    axis.line = element_line (linewidth = 1),
+    axis.ticks = element_line (linewidth = 1),
+    axis.text.x = element_text (size = 16, colour = "black"),
+    axis.text.y = element_text (size = 16, colour = "black"),
+    axis.title.x = element_text (size = 18, face = "bold"),
+    axis.title.y = element_text (size = 18))
+  theme(legend.position = "none") 
+
+## Warning: Removed 63 rows containing missing values or values outside the scale range
+# long format 220 rows --> 44 (date of prep) + 19 missing NfL @ time point 3/4 
+  
+
+print (random_slope_plot)
+
+```
+
+### *Figure 2 C* 
+```{r}
+#Aging_study_summary_data <- Aging_study_summary_data %>%
+#  filter (Random_slope_nfl <= 150)
+
+Linear_survival <- lm(Time_to_event ~ Random_slope_nfl, data = Aging_study_summary_data)
+
+Aging_study_summary_data$Time_death <- Aging_study_summary_data$last_age + Aging_study_summary_data$Time_to_event
+
+
+##### RANDOM SLOPE #####
+survival_plot <- ggplot(Aging_study_summary_data, aes(x = Random_slope_nfl , y = Time_death)) +
+  geom_point(color = "red",alpha = 0.5, position = position_jitter(width = 0, height = 0)) +
+  geom_smooth(method = "lm", color = "blue", fill = "lightblue", alpha = 0.4) +  # Smooth curves
+   xlim(0, 210) + ylim(17, 37) +
+  labs(title = "", #NfL versus time until death based on last age [months]
+       x = expression(bold("Random slope of NfL")),  y = "Time until death based on last age [months]") + 
+    theme_classic2() +
+  theme(
+  text = element_text(family = "Arial"),
+    axis.line = element_line (linewidth = 1),
+    axis.ticks = element_line (linewidth = 1),
+    axis.text.x = element_text (size = 16, colour = "black"),
+    axis.text.y = element_text (size = 16, colour = "black"),
+    axis.title.x = element_text (size = 18, face = "bold"),
+    axis.title.y = element_text (size = 18),
+  theme(legend.position = "none"))
+  
+# Equation and R^2
+summary_survival <- summary(Linear_survival)
+coeff_survival <- summary_survival$coefficients
+intercept_survival <- round(coeff_survival[1, 1], 3)
+slope_survival <- round(coeff_survival[2, 1], 3)
+r_squared_survival <- round(summary_survival$r.squared, 3)
+# p-value for slope
+p_value_survival <- round(coeff_survival[2, 4], 4)  
+
+eq_survival <- paste0("y = ", slope_survival, "x + ", intercept_survival, 
+                  "      \nR² = ", r_squared_survival,
+  "      \nP = ", p_value_survival)
+
+
+eq_survival
+print(survival_plot)
+
+
+``` 
+
+### *Figure 2 D* 
+```{r, message = FALSE, warning = FALSE}
+# Prepare data
+Kaplan_Meier_mean <- Aging_study_summary_data %>%
+  drop_na(Random_slope_nfl, Time_to_event, status_os) %>%
+  mutate(NfL_cat2 = ifelse(Random_slope_nfl >= mean(Random_slope_nfl), "1", "0"))
+
+mean(Kaplan_Meier_mean$Random_slope_nfl)
+# Surv-object & Cox model
+cox_model_mean <- coxph(Surv(Time_to_event, status_os) ~ NfL_cat2, data = Kaplan_Meier_mean)
+summary_cox_mean <- summary(cox_model_mean)
+# results
+p_val_raw_mean <- summary_cox_mean$sctest["pvalue"]
+hr_mean <- summary_cox_mean$conf.int[1, "exp(coef)"]
+hr_low_mean <- summary_cox_mean$conf.int[1, "lower .95"]
+hr_high_mean <- summary_cox_mean$conf.int[1, "upper .95"]
+p_val_adj_mean <- min(p_val_raw_mean * 1, 1) # correct for multiple testing 
+# Kaplan-Meier-Plot
+plot_mean <- ggsurvplot(
+  survfit(Surv(Time_to_event,status_os) ~ NfL_cat2, data = Kaplan_Meier_mean),
+  data = Kaplan_Meier_mean,
+  pval = TRUE,
+  conf.int = TRUE,
+  risk.table = TRUE,
+  legend = "top",
+  legend.labs = c("Low NfL","High NfL"),
+  palette = c("darkseagreen", "brown2"), 
+  ggtheme = theme_classic2(),
+  xlab = "Time until death [months]", 
+  ylab = "Survival probability",
+  extend = TRUE)
+
+plot_mean$plot <- plot_mean$plot +
+  theme_classic2() +
+  theme(
+  text = element_text(family = "Arial"),
+    axis.line = element_line (linewidth = 1),
+    axis.ticks = element_line (linewidth = 1),
+    axis.text.x = element_text (size = 16, color = "black"),
+    axis.text.y = element_text (size = 16, color = "black"),
+    axis.title.x = element_text (size = 18, face = "bold"),
+    axis.title.y = element_text (size = 18,face = "bold"),
+  legend.text = element_text(size = 14),
+  legend.position = "top")
+
+print(plot_mean)
+
+```
+
+### *Figure 2 E* 
+```{r}
+# Cox regression 
+Aging_study_summary_data$Random_slope_nfl_z <- scale(Aging_study_summary_data$Random_slope_nfl)
+Aging_study_summary_data$Gender <- as.factor(Aging_study_summary_data$Gender)
+
+covariates <- c("Random_slope_nfl_z") 
+#This means survival is modeled as a function of a covariate while adjusting for gender
+univ_formulas <- sapply(covariates,
+                        function(x) as.formula(paste('Surv(Time_to_event, status_os) ~ Random_slope_nfl_z +  last_age'))) # + Gender
+# Fit Cox regression models for each covariate adjusted for gender
+univ_models <- lapply(univ_formulas, function(x) { 
+  tryCatch(coxph(x, data = Aging_study_summary_data), 
+           error = function(e) NULL)})  
+# tryCatch ensures that if an error occurs (e.g., missing data or convergence issues), the function returns NULL instead of crashing
+# Extract results from each model
+univ_results <- lapply(univ_models, 
+                       function(x) { 
+                         if (is.null(x)) return(NULL)
+                         x_summary <- summary(x)
+                         beta <- ifelse(!is.null(x_summary$coef),  
+                                        signif(x_summary$coef[1], digits = 2), NA)
+                         HR <- ifelse(!is.null(x_summary$coef), 
+                                      signif(exp(x_summary$coef[1]), digits = 4), NA)
+                         HR.confint.lower <- ifelse(!is.null(x_summary$conf.int), 
+                                                    signif(x_summary$conf.int[,"lower .95"], digits = 4), NA)
+                         HR.confint.upper <- ifelse(!is.null(x_summary$conf.int), 
+                                                    signif(x_summary$conf.int[,"upper .95"], digits = 4), NA)
+                         HR <- ifelse(!is.na(HR), 
+                                      paste0(HR, " (", HR.confint.lower, "-", HR.confint.upper, ")"), NA)
+                         # raw p-value
+                         raw.p <- ifelse(!is.null(x_summary$coef), 
+                                         x_summary$coef[1, "Pr(>|z|)"], NA)
+                         # Bonferroni-> correct for 2 tests
+                         adj.p <- ifelse(!is.na(raw.p), min(raw.p * 2, 1), NA)
+                         p.value <- signif(adj.p, digits = 3)
+                         wald.test <- ifelse(!is.null(x_summary$wald),
+                                             signif(x_summary$wald["test"], digits = 2), NA)
+                         res <- c(beta, HR, wald.test, p.value)
+                         names(res) <- c("beta", "HR (95% CI for HR)", "wald.test", "p.value")
+                         return(res)})
+
+# Remove NULL results (models that failed)
+univ_results_cleaned <- univ_results[!sapply(univ_results, is.null)]
+# Converts the cleaned list into a transposed data frame (t()).
+res <- t(as.data.frame(univ_results_cleaned, check.names = FALSE))
+# Ensures the results are in a proper tabular format for visualization
+as.data.frame(res)
+
+```
+
+
+
+# **FIGURE 3**
+```{r}
+## DATA PLOTTED AND ANALYSED IN GRAPHPAD PRISM 10
+
+# FIGURE 3 A #
+NfL_young <- NfL_Species %>%
+  filter (Sup_2_included == 1)
+# FIGURE 3 B & C
+NfL_young <-NfL_young[NfL_young$Conc_CV < 70 | is.na(NfL_young$Conc_CV), ]
+
+Figure_3B <- NfL_young %>%
+  group_by(Species)
+
+Figure_3B <- subset(Figure_3B, !(Species %in% c("Cat", "Dog") & Age_years <= 1))
+Figure_3B$NfL_weight <- Figure_3B$NfL * Figure_3B$'Average body weight'
+
+Figure_3B <- Figure_3B %>%
+  group_by(Species) %>%
+  mutate(NfL_baseline = median(NfL, na.rm = TRUE)) %>%
+  ungroup ()
+
+Figure_3B$MLS_BW <- Figure_3B$`Maximum Age` + Figure_3B$`Average body weight`
+Figure_3B$NfL_BW <- Figure_3B$NfL_baseline / Figure_3B$`Average body weight`
+
+Correlation <- Figure_3B %>%
+  group_by(Species) %>%
+  summarise( 
+    NfL_baseline = mean (NfL_baseline, na.rm =TRUE),
+    AvBODY = mean (`Average body weight`, na.rm = TRUE),
+    AvLIFE = mean (`Mean life expectancy`, na.rm = TRUE),
+    MaxLIFE = mean (`Maximum Age`, na.rm = TRUE),
+    MLS_BW = mean (MLS_BW, na.rm = TRUE),
+    NfL_BW = mean (NfL_BW, na.rm = TRUE))
+
+# SPEARMAN Correlations performed in PRISM for:
+# NfL / BW ~ MaxAge
+# NfL ~ BW + MaxAge
+# MaxAge ~ BW
+# NfL ~ BW 
+# NfL ~ MaxAge 
+
+```
+
+# **FIGURE 4**
+```{r}
+# PLOT CREATED WITH (4a) GRAPHPAD PRISM 10 and (4b) EXCEL
+
+Figure4_A <- NfL_Species %>%
+  dplyr::filter (Species %in% c("Alpine ibex", "Barbary Sheep", "Bison", "Bonobo", "Bush dog", "Californian sea lion", "Camel", "Coati", "Collared peccary", "Dikdik", "Fallow deer", "Fennec", "Fur seal", "Goitered gazelle", "Giant panda", "Gorilla", "Grevy zebra",  "Kangaroo", "Kunekune pig", "Lama", "Lesser kudu", "Lion", "Lynx", "Markhor", "Meerkat", "Moose", "Okapi", "Orangutan", "Persian leopard", "Polar bear", "Reticulated giraffe", "Rhinoceros", "scimitar-horned oryx", "Seal", "Spider monkey", "Takin", "Tiger", "Wallaby", "Wapiti","Crocodylidae", "Lizard", "Snake", "Tortoise", "Bird")) %>%
+  mutate(Species = dplyr::recode(Species,
+                                 "scimitar-horned oryx" = "Sable antelope", "Goitered gazelle" = "Gazelle", "Crocodylidae" = "Crocodile")) %>%
+ mutate(Species = factor(Species, levels = c("Alpine ibex", "Barbary Sheep", "Bison", "Bonobo", "Bush dog", "Californian sea lion", "Camel", "Coati", "Collared peccary", "Dikdik", "Fallow deer", "Fennec", "Fur seal", "Gazelle", "Giant panda", "Gorilla", "Grevy zebra",  "Kangaroo", "Kunekune pig", "Lama", "Lesser kudu", "Lion", "Lynx", "Markhor", "Meerkat", "Moose", "Okapi", "Orangutan", "Persian leopard", "Polar bear", "Reticulated giraffe", "Rhinoceros", "Sable antelope", "Seal", "Spider monkey", "Takin", "Tiger", "Wallaby", "Wapiti","Crocodile", "Lizard", "Snake", "Tortoise", "Bird")))
+
+# Color
+species_colors <- rep("black", length(levels(Figure4_A$Species)))
+species_colors[(length(species_colors)-4):length(species_colors)] <- "red"
+
+# Plot
+ggplot(Figure4_A, aes(x = Species, y = NfL)) +
+  geom_point(size = 1, color = "black", alpha = 0.6, 
+           position = position_jitter(width = 0.1), inherit.aes = FALSE,
+           aes(x = Species, y = NfL)) +
+  labs(y = "NfL [pg/ml]", x = "") +
+  scale_y_log10(
+    limits = c(0.01, 100000),
+    breaks = c(0.01, 0.1, 1, 10, 100, 1000, 10000, 100000),
+    labels = scales::comma) +
+  scale_x_discrete(labels = function(x) {
+    mapply(function(label, color) {
+      paste0("<span style='color:", color, "'>", label, "</span>")
+    }, x, species_colors)}) +
+  theme_classic2(base_size = 14) +
+  theme(
+    axis.text.x = element_markdown(angle = 45, hjust = 1))
+
+```
+
+
+
+# **Supplementary Table 1**
+```{r}
+S1_Table <- Figure_1_A %>%
+  filter (Species %in% c("Mouse", "Cat", "Dog", "Human", "Horse")) %>%
+  mutate(Species = factor (Species, levels = c("Mouse", "Cat", "Dog", "Human", "Horse"))) %>%
+  mutate (Group = factor(Group, levels = c("Mouse <= 1 year", "Mouse > 1 - 2 years", "Mouse > 2 years", "Cat <= 7 years", "Cat > 7 - 14 years", "Cat > 14 years","Dog <= 6 years", "Dog > 6 - 12 years", "Dog > 12 years", "Human 20 - 40 years", "Human > 40 - 80 years", "Human > 80 years", "Horse <= 12.5 years", "Horse > 12.5 - 25 years", "Horse > 25 years"))) %>% 
+  group_by (Species, Group) %>%
+  summarise (
+    Number = n(),
+    Females = sum(Gender == "f", na.rm = TRUE),
+    Males = sum(Gender == "m", na.rm = TRUE),
+    Unknown_sex = sum (Gender == "u", na.rm = TRUE),
+    Body_weight = mean (`Average body weight`, na.rm = TRUE),
+    Max_age = mean (`Maximum Age`, na.rm = TRUE),
+    Mean_life = mean (`Mean life expectancy`, na.rm = TRUE),
+    Baseline_NfL = median(NfL, na.rm = TRUE))
+
+S1_Table
+
+```
+
+
+# **Supplementary Table 2**
+```{r}
+NfL_young <- NfL_Species %>%
+  filter (Sup_2_included == 1) %>%
+  filter(!(Species %in% c("Cat", "Dog") & Age_years == 1))
+
+S2_Table <- NfL_young %>%
+   mutate(Species = factor (Species, levels = c("Alpaca", "Cat","Cattle", "Dog","Donkey", "Elephant", "Goat", "Horse", "Human", "Mouse", "Rabbit","Deer", "Sheep"))) %>%
+  group_by(Species) %>%
+  summarise (
+    Number = n(),
+    Females = sum(Gender == "f", na.rm = TRUE),
+    Males = sum(Gender == "m", na.rm = TRUE),
+    Unknown_sex = sum (Gender == "u", na.rm = TRUE),
+    Body_weight = mean (`Average body weight`, na.rm = TRUE),
+    Max_age = mean (`Maximum Age`, na.rm = TRUE),
+    Mean_life = mean (`Mean life expectancy`, na.rm = TRUE),
+    Baseline_NfL = median(NfL, na.rm = TRUE))
+
+
+S2_Table
+  
+```
+
+
