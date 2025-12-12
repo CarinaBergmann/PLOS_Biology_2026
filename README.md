@@ -1,6 +1,6 @@
 # PLOS_Biology_Bergmann-et-al
 
-This folder contains the data for the study by Bergmann et al. (PLOS Biology - in revision, as of October 2025), except for human data, which have been censored due to data protection regulations.
+This folder contains the data for the study by Bergmann et al. (PLOS Biology - in revision, as of December 2025), except for human data, which have been censored due to data protection regulations.
 
 Please note that the R code only runs with the complete dataset (especially for Figures 1 and 3, and the Supplementary Tables). 
 The full dataset can be provided confidentially upon request.
