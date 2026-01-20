@@ -13,3 +13,5 @@ Data for Figure 4 are included, but the plot was not generated in R.
 Contact information: mathias.jucker@uni-tuebingen.de or 
                       carina.bergmann@uni-tuebingen.de
                       
+
+[![DOI](https://zenodo.org/badge/1079715783.svg)](https://doi.org/10.5281/zenodo.18315686)
